@@ -29,7 +29,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    dockerImage = docker.build("${DOCKER_HUB_USER}/${IMAGE_NAME}:${BUILD_NUMBER}")
+                    def dockerImage = docker.build("${DOCKER_HUB_USER}/${IMAGE_NAME}:${BUILD_NUMBER}")
                 }
             }
         }
@@ -37,6 +37,7 @@ pipeline {
         stage('Push to DockerHub') {
             steps {
                 script {
+                    def dockerImage = docker.build("${DOCKER_HUB_USER}/${IMAGE_NAME}:${BUILD_NUMBER}")
                     docker.withRegistry('https://index.docker.io/v1/', 'dockerhub-credentials') {
                         dockerImage.push()
                         dockerImage.push("latest")
@@ -60,38 +61,43 @@ pipeline {
                         fi
                     """
 
-                    // Trouver un port disponible
-                    def deployPort = "8080"
+                    // Solution simple : essayer les ports un par un avec Docker directement
+                    def deployPort = null
                     def ports = [8080, 8081, 8082, 8083, 8084]
 
                     for (port in ports) {
-                        def portUsed = sh(
-                            script: "lsof -i:${port} > /dev/null 2>&1",
-                            returnStatus: true
-                        ) == 0
+                        echo "🔍 Test du port ${port}..."
 
-                        if (!portUsed) {
-                            echo "✅ Port ${port} disponible"
-                            deployPort = port.toString()
+                        def result = sh(
+                            script: """
+                                docker run -d -p ${port}:8080 --name ${IMAGE_NAME} ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
+                            """,
+                            returnStatus: true
+                        )
+
+                        if (result == 0) {
+                            deployPort = port
+                            echo "✅ Container démarré avec succès sur le port ${port}"
                             break
                         } else {
-                            echo "⚠️ Port ${port} occupé"
+                            echo "⚠️ Port ${port} occupé, nettoyage..."
+                            sh """
+                                docker stop ${IMAGE_NAME} || true
+                                docker rm ${IMAGE_NAME} || true
+                            """
                         }
                     }
 
-                    if (deployPort == "8080" && sh(script: "lsof -i:8080 > /dev/null 2>&1", returnStatus: true) == 0) {
+                    if (deployPort == null) {
                         error "❌ Aucun port disponible trouvé dans la plage 8080-8084"
                     }
-                    echo "📍 Déploiement sur le port ${deployPort}"
 
-                    // Lancer le container Spring Boot
+                    // Vérifier que le container fonctionne
                     sh """
-                        echo "Lancement du container sur le port ${deployPort}..."
-                        docker run -d -p ${deployPort}:8080 --name ${IMAGE_NAME} ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
                         echo "Attente du démarrage du container..."
                         sleep 5
                         if docker ps | grep ${IMAGE_NAME} > /dev/null; then
-                            echo "✅ Container Spring Boot démarré avec succès sur le port ${deployPort}"
+                            echo "✅ Container Spring Boot vérifié et fonctionnel"
                         else
                             echo "❌ Erreur lors du démarrage du container"
                             docker logs ${IMAGE_NAME} || true
