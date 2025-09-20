@@ -60,26 +60,28 @@ pipeline {
                         fi
                     """
 
-                    // Fonction pour trouver un port disponible
-                    def findAvailablePort() {
-                        def ports = [8080, 8081, 8082, 8083, 8084]
-                        for (port in ports) {
-                            def portUsed = sh(
-                                script: "lsof -i:${port} > /dev/null 2>&1",
-                                returnStatus: true
-                            ) == 0
+                    // Trouver un port disponible
+                    def deployPort = "8080"
+                    def ports = [8080, 8081, 8082, 8083, 8084]
 
-                            if (!portUsed) {
-                                echo "✅ Port ${port} disponible"
-                                return port.toString()
-                            } else {
-                                echo "⚠️ Port ${port} occupé"
-                            }
+                    for (port in ports) {
+                        def portUsed = sh(
+                            script: "lsof -i:${port} > /dev/null 2>&1",
+                            returnStatus: true
+                        ) == 0
+
+                        if (!portUsed) {
+                            echo "✅ Port ${port} disponible"
+                            deployPort = port.toString()
+                            break
+                        } else {
+                            echo "⚠️ Port ${port} occupé"
                         }
-                        error "❌ Aucun port disponible trouvé dans la plage 8080-8084"
                     }
 
-                    def deployPort = findAvailablePort()
+                    if (deployPort == "8080" && sh(script: "lsof -i:8080 > /dev/null 2>&1", returnStatus: true) == 0) {
+                        error "❌ Aucun port disponible trouvé dans la plage 8080-8084"
+                    }
                     echo "📍 Déploiement sur le port ${deployPort}"
 
                     // Lancer le container Spring Boot
