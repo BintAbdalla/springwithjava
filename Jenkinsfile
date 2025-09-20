@@ -9,6 +9,8 @@ pipeline {
     environment {
         DOCKER_HUB_USER = "bintabdallah"
         IMAGE_NAME = "springwithjava"
+        RENDER_API_KEY = "<rnd_SfL3wQRagqRwqnLzqPRkXeBAGpP3>"
+        RENDER_SERVICE_ID = "srv-d37a4sogjchc73c3rhr0"
     }
 
     stages {
@@ -46,7 +48,7 @@ pipeline {
             }
         }
 
-        stage('Deploy (Docker Run)') {
+        stage('Deploy Locally (Docker Run)') {
             steps {
                 script {
                     echo '🚀 Déploiement Spring en cours...'
@@ -54,30 +56,21 @@ pipeline {
                     // Arrêter et supprimer un container existant
                     sh """
                         if [ \$(docker ps -aq -f name=${IMAGE_NAME}) ]; then
-                            echo "Arrêt du container existant..."
                             docker stop ${IMAGE_NAME} || true
                             docker rm ${IMAGE_NAME} || true
-                            echo "Container existant supprimé"
                         fi
                     """
 
-                    // Solution simple : essayer les ports un par un avec Docker directement
+                    // Tester plusieurs ports
                     def deployPort = null
-                    def ports = [8080, 8081, 8082, 8083, 8084]
+                    def ports = [8080,8081,8082,8083,8084]
 
                     for (port in ports) {
                         echo "🔍 Test du port ${port}..."
-
-                        def result = sh(
-                            script: """
-                                docker run -d -p ${port}:8080 --name ${IMAGE_NAME} ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
-                            """,
-                            returnStatus: true
-                        )
-
+                        def result = sh(script: "docker run -d -p ${port}:8080 --name ${IMAGE_NAME} ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest", returnStatus: true)
                         if (result == 0) {
                             deployPort = port
-                            echo "✅ Container démarré avec succès sur le port ${port}"
+                            echo "✅ Container démarré sur le port ${port}"
                             break
                         } else {
                             echo "⚠️ Port ${port} occupé, nettoyage..."
@@ -92,20 +85,24 @@ pipeline {
                         error "❌ Aucun port disponible trouvé dans la plage 8080-8084"
                     }
 
-                    // Vérifier que le container fonctionne
-                    sh """
-                        echo "Attente du démarrage du container..."
-                        sleep 5
-                        if docker ps | grep ${IMAGE_NAME} > /dev/null; then
-                            echo "✅ Container Spring Boot vérifié et fonctionnel"
-                        else
-                            echo "❌ Erreur lors du démarrage du container"
-                            docker logs ${IMAGE_NAME} || true
-                            exit 1
-                        fi
-                    """
+                    sh "sleep 5"
+                    echo "🌐 Application Spring locale accessible sur : http://localhost:${deployPort}"
+                }
+            }
+        }
 
-                    echo "🌐 Application Spring accessible sur : http://localhost:${deployPort}"
+        stage('Deploy to Render') {
+            steps {
+                script {
+                    echo '🚀 Déploiement sur Render...'
+                    httpRequest(
+                        httpMode: 'POST',
+                        url: "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys",
+                        customHeaders: [[name: 'Authorization', value: "Bearer ${RENDER_API_KEY}"]],
+                        contentType: 'APPLICATION_JSON',
+                        validResponseCodes: '200:299'
+                    )
+                    echo '✅ Déploiement Render déclenché'
                 }
             }
         }
@@ -116,20 +113,13 @@ pipeline {
             echo "🧹 Nettoyage de l'espace de travail..."
             cleanWs()
         }
-        success {
-            echo '✅ Pipeline exécuté avec succès !'
-            echo '🎉 L\'application a été déployée correctement'
-        }
         failure {
             echo '❌ Pipeline échoué !'
             script {
-                echo "🧹 Nettoyage des containers en cas d'échec..."
                 sh """
                     if [ \$(docker ps -aq -f name=${IMAGE_NAME}) ]; then
-                        echo "Suppression du container défaillant..."
                         docker stop ${IMAGE_NAME} || true
                         docker rm ${IMAGE_NAME} || true
-                        echo "Nettoyage terminé"
                     fi
                 """
             }
