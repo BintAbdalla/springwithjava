@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     tools {
-        maven 'maven'   // Défini dans Jenkins (Global Tool Config)
-        jdk 'jdk17'     // Défini aussi dans Jenkins
+        maven 'maven'   // défini dans Jenkins
+        jdk 'jdk17'     // défini dans Jenkins
     }
 
     environment {
@@ -11,15 +11,15 @@ pipeline {
         IMAGE_NAME = "springwithjava"
     }
 
-stages {
-    stage('Checkout') {
-        steps {
-            git branch: 'main',
-                url: 'https://github.com/BintAbdalla/springwithjava.git',
-                credentialsId: 'github-credit'
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/BintAbdalla/springwithjava.git',
+                    credentialsId: 'github-credit'
+            }
         }
-    }
-}
+
         stage('Build with Maven') {
             steps {
                 sh 'mvn clean package -DskipTests'
