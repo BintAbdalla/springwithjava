@@ -9,7 +9,6 @@ pipeline {
     environment {
         DOCKER_HUB_USER = "bintabdallah"
         IMAGE_NAME = "springwithjava"
-        RENDER_API_KEY = "<rnd_SfL3wQRagqRwqnLzqPRkXeBAGpP3>"
         RENDER_SERVICE_ID = "srv-d37a4sogjchc73c3rhr0"
     }
 
@@ -31,7 +30,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    def dockerImage = docker.build("${DOCKER_HUB_USER}/${IMAGE_NAME}:${BUILD_NUMBER}")
+                    docker.build("${DOCKER_HUB_USER}/${IMAGE_NAME}:${BUILD_NUMBER}")
                 }
             }
         }
@@ -51,9 +50,8 @@ pipeline {
         stage('Deploy Locally (Docker Run)') {
             steps {
                 script {
-                    echo '🚀 Déploiement Spring en cours...'
+                    echo '🚀 Déploiement Spring local en cours...'
 
-                    // Arrêter et supprimer un container existant
                     sh """
                         if [ \$(docker ps -aq -f name=${IMAGE_NAME}) ]; then
                             docker stop ${IMAGE_NAME} || true
@@ -61,7 +59,6 @@ pipeline {
                         fi
                     """
 
-                    // Tester plusieurs ports
                     def deployPort = null
                     def ports = [8080,8081,8082,8083,8084]
 
@@ -93,8 +90,7 @@ pipeline {
 
         stage('Deploy to Render') {
             steps {
-                script {
-                    echo '🚀 Déploiement sur Render...'
+                withCredentials([string(credentialsId: 'render-api-key', variable: 'RENDER_API_KEY')]) {
                     httpRequest(
                         httpMode: 'POST',
                         url: "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys",
