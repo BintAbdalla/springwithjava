@@ -47,11 +47,82 @@ pipeline {
 
         stage('Deploy (Docker Run)') {
             steps {
-                sh '''
-                docker stop demo-app || true
-                docker rm demo-app || true
-                docker run -d --name demo-app -p 8080:8080 ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
-                '''
+                script {
+                    echo '🚀 Déploiement Spring en cours...'
+
+                    // Arrêter et supprimer un container existant
+                    sh """
+                        if [ \$(docker ps -aq -f name=${IMAGE_NAME}) ]; then
+                            echo "Arrêt du container existant..."
+                            docker stop ${IMAGE_NAME} || true
+                            docker rm ${IMAGE_NAME} || true
+                            echo "Container existant supprimé"
+                        fi
+                    """
+
+                    // Déterminer le port disponible
+                    def deployPort = "8080"
+
+                    def port8080Used = sh(
+                        script: "lsof -i:8080 > /dev/null 2>&1",
+                        returnStatus: true
+                    ) == 0
+
+                    if (port8080Used) {
+                        echo "⚠️ Port 8080 occupé, tentative sur le port 8081"
+
+                        def port8081Used = sh(
+                            script: "lsof -i:8081 > /dev/null 2>&1",
+                            returnStatus: true
+                        ) == 0
+
+                        deployPort = port8081Used ? "8082" : "8081"
+                    }
+
+                    echo "📍 Déploiement sur le port ${deployPort}"
+
+                    // Lancer le container Spring Boot
+                    sh """
+                        echo "Lancement du container sur le port ${deployPort}..."
+                        docker run -d -p ${deployPort}:8080 --name ${IMAGE_NAME} ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest
+                        echo "Attente du démarrage du container..."
+                        sleep 5
+                        if docker ps | grep ${IMAGE_NAME} > /dev/null; then
+                            echo "✅ Container Spring Boot démarré avec succès sur le port ${deployPort}"
+                        else
+                            echo "❌ Erreur lors du démarrage du container"
+                            docker logs ${IMAGE_NAME} || true
+                            exit 1
+                        fi
+                    """
+
+                    echo "🌐 Application Spring accessible sur : http://localhost:${deployPort}"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "🧹 Nettoyage de l'espace de travail..."
+            cleanWs()
+        }
+        success {
+            echo '✅ Pipeline exécuté avec succès !'
+            echo '🎉 L\'application a été déployée correctement'
+        }
+        failure {
+            echo '❌ Pipeline échoué !'
+            script {
+                echo "🧹 Nettoyage des containers en cas d'échec..."
+                sh """
+                    if [ \$(docker ps -aq -f name=${IMAGE_NAME}) ]; then
+                        echo "Suppression du container défaillant..."
+                        docker stop ${IMAGE_NAME} || true
+                        docker rm ${IMAGE_NAME} || true
+                        echo "Nettoyage terminé"
+                    fi
+                """
             }
         }
     }
